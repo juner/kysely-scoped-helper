@@ -35,7 +35,11 @@
     "kysely",
     "typescript",
     "async-disposable",
-    "transaction"
+    "transaction",
+    "using",
+    "disposable",
+    "explicit-resource-management",
+    "savepoint"
   ],
   "author": "",
   "license": "MIT",
