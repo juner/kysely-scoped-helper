@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"explorer.fileNesting.enabled": true,
+		"explorer.fileNesting.patterns": {
+			"*.ts": "${capture}.js, ${capture}.*.ts",
+		},
+    	"coverage-gutters.coverageReportFileName": "coverage.lcov"
+	},
+}
