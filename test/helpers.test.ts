@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { test } from "node:test";
 import {
   AbortedTransactionError,
@@ -485,4 +486,12 @@ await test("startTransaction accepts options object and builder callback", async
   } finally {
     await db.destroy();
   }
+});
+
+await test("package exports support CommonJS require()", () => {
+  const require = createRequire(import.meta.url);
+  const cjsModule = require("kysely-scoped-helper") as Record<string, unknown>;
+  assert.equal(typeof cjsModule.startConnection, "function");
+  assert.equal(typeof cjsModule.startTransaction, "function");
+  assert.equal(typeof cjsModule.startSavePoint, "function");
 });

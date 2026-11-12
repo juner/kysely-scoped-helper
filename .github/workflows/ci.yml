@@ -30,11 +30,11 @@ jobs:
       - name: Run linter
         run: npm run lint
 
+      - name: Build package
+        run: npm run build
+
       - name: Run type and runtime tests
         run: npm test
 
       - name: Verify 100% test coverage
         run: npm run test:coverage
-
-      - name: Build package
-        run: npm run build
