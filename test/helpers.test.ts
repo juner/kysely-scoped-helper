@@ -7,6 +7,9 @@ import {
   PostgresAdapter,
   PostgresIntrospector,
   PostgresQueryCompiler,
+  type AbortableOperationOptions,
+  type DatabaseConnection,
+  type TransactionSettings,
 } from "kysely";
 import { startConnection, startSavePoint, startTransaction } from "../src/index.js";
 
@@ -17,6 +20,8 @@ interface Database {
 class RecordingDriver extends DummyDriver {
   readonly events: string[] = [];
   readonly failures = new Map<string, Error>();
+  readonly connectionOptions: (AbortableOperationOptions | undefined)[] = [];
+  readonly transactionSettings: TransactionSettings[] = [];
   fail: string | undefined;
   releaseGate?: Promise<void>;
 
@@ -27,17 +32,28 @@ class RecordingDriver extends DummyDriver {
     if (this.fail === event) throw new Error(event);
   }
 
-  override async acquireConnection() {
+  override async acquireConnection(options?: AbortableOperationOptions) {
+    this.connectionOptions.push(options);
     this.record("acquire");
     return super.acquireConnection();
   }
 
-  override async releaseConnection(): Promise<void> {
+  override async releaseConnection(
+    _connection?: DatabaseConnection,
+    options?: AbortableOperationOptions,
+  ): Promise<void> {
+    this.connectionOptions.push(options);
     await this.releaseGate;
     this.record("release");
   }
 
-  override async beginTransaction(): Promise<void> {
+  override async beginTransaction(
+    _connection?: DatabaseConnection,
+    settings?: TransactionSettings,
+  ): Promise<void> {
+    if (settings) {
+      this.transactionSettings.push(settings);
+    }
     this.record("begin");
     await super.beginTransaction();
   }
@@ -421,5 +437,52 @@ await test("savepoint creation, release, and rollback failures propagate", async
     } finally {
       await db.destroy();
     }
+  }
+});
+
+await test("startConnection forwards AbortableOperationOptions", async () => {
+  const { db, driver } = createDatabase();
+  const controller = new AbortController();
+  try {
+    {
+      await using connection = await startConnection(db, { signal: controller.signal });
+      assert.ok(connection.db);
+    }
+    assert.deepEqual(driver.connectionOptions, [
+      { signal: controller.signal },
+      { signal: controller.signal },
+    ]);
+  } finally {
+    await db.destroy();
+  }
+});
+
+await test("startTransaction accepts options object and builder callback", async () => {
+  const { db, driver } = createDatabase();
+  try {
+    {
+      await using tx = await startTransaction(db, {
+        isolationLevel: "serializable",
+        accessMode: "read only",
+      });
+      await tx.commit();
+    }
+    {
+      await using tx = await startTransaction(db, {});
+      await tx.commit();
+    }
+    {
+      await using tx = await startTransaction(db, (builder) =>
+        builder.setIsolationLevel("repeatable read").setAccessMode("read write"),
+      );
+      await tx.commit();
+    }
+    assert.deepEqual(driver.transactionSettings, [
+      { isolationLevel: "serializable", accessMode: "read only" },
+      { isolationLevel: undefined, accessMode: undefined },
+      { isolationLevel: "repeatable read", accessMode: "read write" },
+    ]);
+  } finally {
+    await db.destroy();
   }
 });

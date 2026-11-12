@@ -1,4 +1,11 @@
-import type { ControlledTransaction, Kysely } from "kysely";
+import type {
+  AbortableOperationOptions,
+  AccessMode,
+  ControlledTransaction,
+  ControlledTransactionBuilder,
+  IsolationLevel,
+  Kysely,
+} from "kysely";
 declare global {
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     interface AsyncDisposable {
@@ -16,13 +23,14 @@ export interface StartConnectionResult<DB> extends AsyncDisposable {
  */
 export async function startConnection<DB>(
   db: Kysely<DB>,
+  options?: AbortableOperationOptions,
 ): Promise<StartConnectionResult<DB>> {
   const started = Promise.withResolvers<Kysely<DB>>();
   const ended = Promise.withResolvers<undefined>();
   const finished = db.connection().execute((connection) => {
     started.resolve(connection);
     return ended.promise;
-  });
+  }, options);
   // Acquisition can fail before the connection callback is entered.
   void finished.catch(started.reject);
   const connection = await started.promise;
@@ -41,6 +49,17 @@ export async function startConnection<DB>(
   };
 }
 
+export interface TransactionOptions {
+  readonly accessMode?: AccessMode | undefined;
+  readonly isolationLevel?: IsolationLevel | undefined;
+}
+
+export type StartTransactionOptions<DB> =
+  | TransactionOptions
+  | ((
+      builder: ControlledTransactionBuilder<DB>,
+    ) => ControlledTransactionBuilder<DB>);
+
 export interface StartTransactionResult<DB> extends AsyncDisposable {
   readonly transaction: ControlledTransaction<DB>;
   commit(): Promise<void>;
@@ -53,8 +72,20 @@ export interface StartTransactionResult<DB> extends AsyncDisposable {
  */
 export async function startTransaction<DB>(
   db: Kysely<DB>,
+  options?: StartTransactionOptions<DB>,
 ): Promise<StartTransactionResult<DB>> {
-  const transaction = await db.startTransaction().execute();
+  let builder = db.startTransaction();
+  if (typeof options === "function") {
+    builder = options(builder);
+  } else if (options !== undefined) {
+    if (options.isolationLevel !== undefined) {
+      builder = builder.setIsolationLevel(options.isolationLevel);
+    }
+    if (options.accessMode !== undefined) {
+      builder = builder.setAccessMode(options.accessMode);
+    }
+  }
+  const transaction = await builder.execute();
 
   async function commit(): Promise<void> {
     await transaction.commit().execute();

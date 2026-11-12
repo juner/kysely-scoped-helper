@@ -50,12 +50,14 @@ export async function insertPerson(db: Kysely<Database>): Promise<void> {
 
 | API | 明示的な操作 | `await using` のスコープ終了時 |
 | --- | --- | --- |
-| `startConnection(db)` | `release()` | 接続をプールに返却 |
-| `startTransaction(db)` | `commit()` / `rollback()` | 未完了なら rollback |
+| `startConnection(db, options?)` | `release()` | 接続をプールに返却 |
+| `startTransaction(db, options?)` | `commit()` / `rollback()` | 未完了なら rollback |
 | `startSavePoint(transaction, name)` | `release()` / `rollback()` | 未処理ならセーブポイントまで rollback |
 
 - 接続は `connection.db`、トランザクションは `tx.transaction`、
   セーブポイント内の操作対象は `sp.transaction` です。
+- `startConnection` の `options` には `{ signal?: AbortSignal }`（`AbortableOperationOptions`）を渡せます。
+- `startTransaction` の `options` には `{ isolationLevel?, accessMode? }` オブジェクト、または `ControlledTransactionBuilder` を受け取る設定用コールバック `(builder) => builder` を渡せます。
 - 例外でスコープを抜けた場合も後処理が実行されます。取得や後処理の失敗は呼び出し側へ伝播します。
 - `await using` を使わない場合は `try/finally` で
   `await resource[Symbol.asyncDispose]()` を呼び出してください。

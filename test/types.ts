@@ -1,11 +1,13 @@
-import type { ControlledTransaction, Kysely } from "kysely";
+import type { ControlledTransaction, ControlledTransactionBuilder, Kysely } from "kysely";
 import {
   startConnection,
   startSavePoint,
   startTransaction,
   type StartConnectionResult,
   type StartSavePointResult,
+  type StartTransactionOptions,
   type StartTransactionResult,
+  type TransactionOptions,
 } from "../src/index.js";
 
 interface Database {
@@ -17,7 +19,9 @@ function expectType<T>(value: T): T {
 }
 
 export async function checkTypes(db: Kysely<Database>): Promise<void> {
-  await using connection = await startConnection(db);
+  await using connection = await startConnection(db, {
+    signal: new AbortController().signal,
+  });
   expectType<StartConnectionResult<Database>>(connection);
   expectType<Kysely<Database>>(connection.db);
   const person = await connection.db.selectFrom("person").selectAll().executeTakeFirstOrThrow();
@@ -30,7 +34,22 @@ export async function checkTypes(db: Kysely<Database>): Promise<void> {
   // @ts-expect-error Query results must retain their column types.
   expectType<string>(person.id);
 
-  await using tx = await startTransaction(connection.db);
+  const txOptions: TransactionOptions = {
+    isolationLevel: "serializable",
+    accessMode: "read only",
+  };
+  expectType<StartTransactionOptions<Database>>(txOptions);
+
+  await using tx = await startTransaction(connection.db, txOptions);
+  await using txWithCallback = await startTransaction(connection.db, (builder) => {
+    expectType<ControlledTransactionBuilder<Database>>(builder);
+    return builder.setIsolationLevel("read committed").setAccessMode("read write");
+  });
+  expectType<StartTransactionResult<Database>>(txWithCallback);
+  // @ts-expect-error Invalid isolation level must be rejected.
+  await startTransaction(connection.db, { isolationLevel: "invalid" });
+  // @ts-expect-error Invalid access mode must be rejected.
+  await startTransaction(connection.db, { accessMode: "invalid" });
   expectType<StartTransactionResult<Database>>(tx);
   expectType<ControlledTransaction<Database>>(tx.transaction);
   // @ts-expect-error Transaction queries must retain the schema.
