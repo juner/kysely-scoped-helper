@@ -1,3 +1,7 @@
+/**
+ * Explicit resource management helpers for Kysely connections, transactions, and savepoints.
+ */
+
 import type {
   AbortableOperationOptions,
   AccessMode,
