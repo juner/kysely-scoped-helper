@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  AbortedTransactionError,
   DummyDriver,
   Kysely,
   PostgresAdapter,
@@ -15,11 +16,14 @@ interface Database {
 
 class RecordingDriver extends DummyDriver {
   readonly events: string[] = [];
+  readonly failures = new Map<string, Error>();
   fail: string | undefined;
   releaseGate?: Promise<void>;
 
   private record(event: string): void {
     this.events.push(event);
+    const error = this.failures.get(event);
+    if (error) throw error;
     if (this.fail === event) throw new Error(event);
   }
 
@@ -205,6 +209,91 @@ await test("failed commit propagates and disposal still rolls back", async () =>
       await assert.rejects(tx.commit(), { message: "commit" });
     }
     assert.deepEqual(driver.events, ["acquire", "begin", "commit", "rollback", "release"]);
+  } finally {
+    await db.destroy();
+  }
+});
+
+await test("uncaught commit failure rolls back before the original error leaves the scope", async () => {
+  const { db, driver } = createDatabase();
+  const commitError = new Error("commit failed");
+  driver.failures.set("commit", commitError);
+  try {
+    await assert.rejects(async () => {
+      await using tx = await startTransaction(db);
+      await tx.commit();
+    }, (error: unknown) => {
+      assert.equal(error, commitError);
+      assert.deepEqual(driver.events, ["acquire", "begin", "commit", "rollback", "release"]);
+      return true;
+    });
+  } finally {
+    await db.destroy();
+  }
+});
+
+await test("explicit rollback after commit failure is not repeated on disposal", async () => {
+  const { db, driver } = createDatabase();
+  const commitError = new Error("commit failed");
+  driver.failures.set("commit", commitError);
+  try {
+    {
+      await using tx = await startTransaction(db);
+      try {
+        await tx.commit();
+        assert.fail("commit must reject");
+      } catch (error) {
+        assert.equal(error, commitError);
+        assert.equal(tx.transaction.isCommitted, false);
+        assert.equal(tx.transaction.isRolledBack, false);
+        await tx.rollback();
+        assert.equal(tx.transaction.isRolledBack, true);
+      }
+    }
+    assert.deepEqual(driver.events, ["acquire", "begin", "commit", "rollback", "release"]);
+  } finally {
+    await db.destroy();
+  }
+});
+
+await test("commit and disposal rollback failures preserve both errors and release the connection", async () => {
+  const { db, driver } = createDatabase();
+  const commitError = new Error("commit failed");
+  const rollbackError = new Error("rollback failed");
+  driver.failures.set("commit", commitError);
+  driver.failures.set("rollback", rollbackError);
+  try {
+    await assert.rejects(async () => {
+      await using tx = await startTransaction(db);
+      await tx.commit();
+    }, (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.name, "SuppressedError");
+      assert.ok("error" in error);
+      assert.ok("suppressed" in error);
+      assert.equal(error.error, rollbackError);
+      assert.equal(error.suppressed, commitError);
+      assert.deepEqual(driver.events, ["acquire", "begin", "commit", "rollback", "release"]);
+      return true;
+    });
+  } finally {
+    await db.destroy();
+  }
+});
+
+await test("database-aborted commit does not send a redundant rollback on disposal", async () => {
+  const { db, driver } = createDatabase();
+  const commitError = new AbortedTransactionError();
+  driver.failures.set("commit", commitError);
+  try {
+    await assert.rejects(async () => {
+      await using tx = await startTransaction(db);
+      await tx.commit();
+    }, (error: unknown) => {
+      assert.equal(error, commitError);
+      assert.deepEqual(driver.events, ["acquire", "begin", "commit", "release"]);
+      return true;
+    });
   } finally {
     await db.destroy();
   }

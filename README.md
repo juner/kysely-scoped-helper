@@ -77,7 +77,9 @@ npm run build
 npm pack --dry-run
 ```
 
-ESLint の `strictTypeChecked` で unsafe な型操作や未処理の Promise などを検出し、
+ESLint の `strictTypeChecked` で unsafe な型操作や未処理の Promise などを検出します。
+設定は `eslint.config.ts` に記述します。Node.js の対応範囲で読み込めるよう、
+開発依存の `jiti` を使用し、設定自体も型検査・lint の対象に含めています。
 TypeScript の strict モードと `@ts-expect-error` を使う型回帰テストで
 スキーマ・セーブポイントの型を検証します。
 実行時テストは Node.js 標準のテストランナーと Kysely のテスト用ドライバーを使い、
