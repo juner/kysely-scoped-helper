@@ -1,4 +1,9 @@
 import type { ControlledTransaction, Kysely } from "kysely";
+declare global {
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+    interface AsyncDisposable {
+    }
+}
 
 export interface StartConnectionResult<DB> extends AsyncDisposable {
   readonly db: Kysely<DB>;
