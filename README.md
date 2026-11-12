@@ -1,20 +1,18 @@
 # kysely-scoped-helper
 
-Kysely の接続・トランザクション・セーブポイントを `await using` で管理する、
-型定義付きの ESM パッケージです。
-[元の Gist](https://gist.github.com/juner/3bcf6f803cec61300f0db3d24042ea22) を基にしています。
+A typed ESM package for managing Kysely connections, transactions, and savepoints with `await using` (Explicit Resource Management).
+Based on the [original Gist](https://gist.github.com/juner/3bcf6f803cec61300f0db3d24042ea22).
 
-## インストール
+## Installation
 
 ```sh
 npm install kysely kysely-scoped-helper
 ```
 
-Node.js 22.13 以上、Kysely `^0.29.8` が必要です。TypeScript 5.9 系で検証しており、
-`compilerOptions.lib` に `ESNext.Disposable` と実行環境に対応する標準ライブラリを含めてください。
-データベースの dialect とドライバーは利用側で設定します。
+Requires Node.js 22.13 or later and Kysely `^0.29.8`. Verified with TypeScript 5.9; include `ESNext.Disposable` alongside the standard library for your target runtime in `compilerOptions.lib`.
+Database dialects and drivers are configured by the consumer.
 
-## 使用例
+## Usage
 
 ```ts
 import type { Kysely } from "kysely";
@@ -45,31 +43,25 @@ export async function insertPerson(db: Kysely<Database>): Promise<void> {
 }
 ```
 
-スコープは内側から後処理され、元の `db` 自体は破棄しません。
-テーブル・カラム・クエリ結果の型は元の Kysely スキーマから引き継がれます。
+Scopes are cleaned up from the inside out, and the original `db` instance itself is not destroyed.
+Table, column, and query result types are preserved from the original Kysely schema.
 
-| API | 明示的な操作 | `await using` のスコープ終了時 |
+| API | Explicit Actions | On `await using` Scope Exit |
 | --- | --- | --- |
-| `startConnection(db, options?)` | `release()` | 接続をプールに返却 |
-| `startTransaction(db, options?)` | `commit()` / `rollback()` | 未完了なら rollback |
-| `startSavePoint(transaction, name)` | `release()` / `rollback()` | 未処理ならセーブポイントまで rollback |
+| `startConnection(db, options?)` | `release()` | Returns the connection to the pool |
+| `startTransaction(db, options?)` | `commit()` / `rollback()` | Rolls back if not finalized |
+| `startSavePoint(transaction, name)` | `release()` / `rollback()` | Rolls back to the savepoint if not handled |
 
-- 接続は `connection.db`、トランザクションは `tx.transaction`、
-  セーブポイント内の操作対象は `sp.transaction` です。
-- `startConnection` の `options` には `{ signal?: AbortSignal }`（`AbortableOperationOptions`）を渡せます。
-- `startTransaction` の `options` には `{ isolationLevel?, accessMode? }` オブジェクト、または `ControlledTransactionBuilder` を受け取る設定用コールバック `(builder) => builder` を渡せます。
-- 例外でスコープを抜けた場合も後処理が実行されます。取得や後処理の失敗は呼び出し側へ伝播します。
-- `await using` を使わない場合は `try/finally` で
-  `await resource[Symbol.asyncDispose]()` を呼び出してください。
-- `startSavePoint` は Gist と同じ大文字小文字の API 名です。
-  ネスト時には直前の `sp.transaction` を渡します。リテラルの重複名は型検査で拒否されます。
-  動的に生成する名前の一意性は利用側で管理してください。
-- セーブポイントには、利用する dialect / データベースの対応が必要です。
-  rollback はセーブポイントを解放する操作ではありません。
-- commit / rollback / release は必ず `await` し、同じリソースで競合する操作を並行実行しないでください。
-  セーブポイントを外側から解放したり、親トランザクションを先に終了させたりしないでください。
+- Access the scoped instances via `connection.db` for connections, `tx.transaction` for transactions, and `sp.transaction` for operations within a savepoint.
+- `options` in `startConnection` accepts `{ signal?: AbortSignal }` (`AbortableOperationOptions`).
+- `options` in `startTransaction` accepts either a `{ isolationLevel?, accessMode? }` object or a configuration callback `(builder) => builder` receiving `ControlledTransactionBuilder`.
+- Cleanup runs even when exiting a scope due to an exception. Acquisition and cleanup failures propagate to the caller.
+- If you are not using `await using`, call `await resource[Symbol.asyncDispose]()` inside a `try/finally` block.
+- `startSavePoint` keeps the same casing as the original Gist API. When nesting savepoints, pass the preceding `sp.transaction`. Duplicate literal savepoint names are rejected at compile time; uniqueness of dynamically generated names must be managed by the caller.
+- Savepoints require support from your database dialect and engine. Rolling back to a savepoint does not release it.
+- Always `await` calls to `commit`, `rollback`, and `release`, and do not run conflicting operations concurrently on the same resource. Do not release an outer savepoint before an inner one, or finalize a parent transaction before its savepoints.
 
-## 開発・検証
+## Development & Verification
 
 ```sh
 npm ci
@@ -80,26 +72,18 @@ npm run build
 npm pack --dry-run
 ```
 
-ESLint の `strictTypeChecked` で unsafe な型操作や未処理の Promise などを検出します。
-設定は `eslint.config.ts` に記述します。Node.js の対応範囲で読み込めるよう、
-開発依存の `jiti` を使用し、設定自体も型検査・lint の対象に含めています。
-TypeScript の strict モードと `@ts-expect-error` を使う型回帰テストで
-スキーマ・セーブポイントの型を検証します。
-実行時テストは Node.js 標準のテストランナーと Kysely のテスト用ドライバーを使い、
-実データベースへの接続は不要です。実 DB 固有の挙動は利用側でも検証してください。
-静的検査は実行時データの妥当性まで保証するものではありません。
+ESLint with `strictTypeChecked` detects unsafe type operations, floating Promises, and other issues.
+Configuration is written in `eslint.config.ts`, loaded via `jiti` (a dev dependency) across supported Node.js versions, and is itself type-checked and linted.
+Type regression tests using TypeScript's `strict` mode and `@ts-expect-error` verify schema and savepoint types.
+Runtime tests use Node.js's built-in test runner and Kysely's `DummyDriver`, requiring no live database connection. Verify database-specific behavior in your own environment. Static type checks do not guarantee runtime data validity.
 
-### カバレージ
+### Coverage
 
-`npm run test:coverage` は Node.js 標準の実験的カバレージ機能を使い、
-実行時テストと行・分岐・関数カバレージの集計を端末に表示します。
-同時に `coverage.lcov` を出力し、LCOV 対応の閲覧ツールや CI サービスで利用できます。
-追加の依存パッケージは不要です。
+`npm run test:coverage` uses Node.js's built-in experimental test coverage to display runtime test results along with line, branch, and function coverage summaries in the terminal.
+It also outputs `coverage.lcov` for LCOV-compatible viewers and CI services without requiring extra dependencies.
 
-計測対象は `src` をコンパイルした `.test-dist/src/**/*.js` のみで、
-テストコードと依存パッケージは除外します。レポートの行番号は生成された JavaScript のものです。
-型レベルの回帰テストは実行時カバレージには含まれないため、`npm test` も実行してください。
-`coverage.lcov` は Git の追跡対象外で、npm パッケージにも含まれません。
+Coverage is measured against `.test-dist/src/**/*.js` (compiled from `src`) with source maps enabled, excluding test files and dependencies.
+Type-level regression tests are not part of runtime coverage, so run `npm test` as well.
+`coverage.lcov` is ignored by Git and excluded from the published npm package.
 
-`npm pack` / `npm publish` 時にビルドされ、JavaScript と型定義を含む `dist`、
-README、ライセンスのみを配布します。公開は npm の権限を持つ利用者が行ってください。
+Running `npm pack` / `npm publish` builds the project and distributes only `dist` (JavaScript and `.d.ts` files), `README.md`, and `LICENSE`. Publishing should be performed by a maintainer with npm publish permissions.
