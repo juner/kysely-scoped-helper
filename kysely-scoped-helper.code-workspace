@@ -10,4 +10,9 @@
 			"*.ts": "${capture}.js, ${capture}.*.ts",
 		},
 	},
+	"extensions": {
+		"recommendations": [
+			"ryanluker.vscode-coverage-gutters"
+		]
+	},
 }
