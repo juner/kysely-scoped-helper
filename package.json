@@ -1,0 +1,61 @@
+{
+  "name": "kysely-scoped-helper",
+  "version": "1.0.0",
+  "description": "kysely + explicit resource management helper",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "test:types": "tsc --noEmit",
+    "test:runtime": "tsc -p tsconfig.test.json && node --test .test-dist/test/*.test.js",
+    "test:coverage": "tsc -p tsconfig.test.json && node --enable-source-maps --test --experimental-test-coverage --test-coverage-include=\".test-dist/src/**/*.js\" --test-coverage-include=\"src/**/*.ts\" --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov .test-dist/test/*.test.js",
+    "test": "npm run test:types && npm run test:runtime",
+    "prepack": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juner/kysely-scoped-helper.git"
+  },
+  "keywords": [
+    "kysely",
+    "typescript",
+    "async-disposable",
+    "transaction",
+    "using",
+    "disposable",
+    "explicit-resource-management",
+    "savepoint"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "kysely": "^0.29.8"
+  },
+  "overrides": {
+    "minimatch": "^11.0.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.5",
+    "eslint": "10.14.0",
+    "jiti": "2.7.0",
+    "kysely": "0.29.8",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.2"
+  }
+}
