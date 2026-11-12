@@ -256,7 +256,7 @@ await test("explicit rollback after commit failure is not repeated on disposal",
   }
 });
 
-await test("commit and disposal rollback failures preserve both errors and release the connection", async () => {
+await test("commit and rollback failures produce SuppressedError with both original errors", async () => {
   const { db, driver } = createDatabase();
   const commitError = new Error("commit failed");
   const rollbackError = new Error("rollback failed");
@@ -274,6 +274,31 @@ await test("commit and disposal rollback failures preserve both errors and relea
       assert.equal(error.error, rollbackError);
       assert.equal(error.suppressed, commitError);
       assert.deepEqual(driver.events, ["acquire", "begin", "commit", "rollback", "release"]);
+      return true;
+    });
+  } finally {
+    await db.destroy();
+  }
+});
+
+await test("body throw and rollback failure produce SuppressedError with both original errors", async () => {
+  const { db, driver } = createDatabase();
+  const bodyError = new Error("body failed");
+  const rollbackError = new Error("rollback failed");
+  driver.failures.set("rollback", rollbackError);
+  try {
+    await assert.rejects(async () => {
+      await using tx = await startTransaction(db);
+      assert.ok(tx.transaction);
+      throw bodyError;
+    }, (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.name, "SuppressedError");
+      assert.ok("error" in error);
+      assert.ok("suppressed" in error);
+      assert.equal(error.error, rollbackError);
+      assert.equal(error.suppressed, bodyError);
+      assert.deepEqual(driver.events, ["acquire", "begin", "rollback", "release"]);
       return true;
     });
   } finally {
