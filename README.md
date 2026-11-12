@@ -73,6 +73,7 @@ export async function insertPerson(db: Kysely<Database>): Promise<void> {
 npm ci
 npm run lint
 npm test
+npm run test:coverage
 npm run build
 npm pack --dry-run
 ```
@@ -85,6 +86,18 @@ TypeScript の strict モードと `@ts-expect-error` を使う型回帰テス�
 実行時テストは Node.js 標準のテストランナーと Kysely のテスト用ドライバーを使い、
 実データベースへの接続は不要です。実 DB 固有の挙動は利用側でも検証してください。
 静的検査は実行時データの妥当性まで保証するものではありません。
+
+### カバレージ
+
+`npm run test:coverage` は Node.js 標準の実験的カバレージ機能を使い、
+実行時テストと行・分岐・関数カバレージの集計を端末に表示します。
+同時に `coverage.lcov` を出力し、LCOV 対応の閲覧ツールや CI サービスで利用できます。
+追加の依存パッケージは不要です。
+
+計測対象は `src` をコンパイルした `.test-dist/src/**/*.js` のみで、
+テストコードと依存パッケージは除外します。レポートの行番号は生成された JavaScript のものです。
+型レベルの回帰テストは実行時カバレージには含まれないため、`npm test` も実行してください。
+`coverage.lcov` は Git の追跡対象外で、npm パッケージにも含まれません。
 
 `npm pack` / `npm publish` 時にビルドされ、JavaScript と型定義を含む `dist`、
 README、ライセンスのみを配布します。公開は npm の権限を持つ利用者が行ってください。
