@@ -45,7 +45,7 @@
     "explicit-resource-management",
     "savepoint"
   ],
-  "author": "juners",
+  "author": "juner",
   "license": "MIT",
   "peerDependencies": {
     "kysely": "^0.29.8"
