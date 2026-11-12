@@ -31,6 +31,10 @@
     "type": "git",
     "url": "git+https://github.com/juner/kysely-scoped-helper.git"
   },
+  "bugs": {
+    "url": "https://github.com/juner/kysely-scoped-helper/issues"
+  },
+  "homepage": "https://github.com/juner/kysely-scoped-helper#readme",
   "keywords": [
     "kysely",
     "typescript",
@@ -41,7 +45,7 @@
     "explicit-resource-management",
     "savepoint"
   ],
-  "author": "",
+  "author": "juners",
   "license": "MIT",
   "peerDependencies": {
     "kysely": "^0.29.8"
