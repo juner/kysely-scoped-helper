@@ -9,6 +9,15 @@
 		"explorer.fileNesting.patterns": {
 			"*.ts": "${capture}.js, ${capture}.*.ts",
 		},
+		"coverage-gutters.coverageFileNames": [
+			"coverage.lcov",
+			"lcov.info",
+			"cov.xml",
+			"coverage.xml",
+			"cobertura.xml",
+			"jacoco.xml",
+			"coverage.cobertura.xml"
+		],
 	},
 	"extensions": {
 		"recommendations": [
