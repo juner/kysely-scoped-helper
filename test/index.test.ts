@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { test } from "node:test";
+import { expect, test } from "vitest";
 import {
   AbortedTransactionError,
   DummyDriver,
@@ -98,22 +97,22 @@ function createDatabase() {
   return { db, driver };
 }
 
-await test("connection stays acquired until await using exits", async () => {
+test("connection stays acquired until await using exits", async () => {
   const { db, driver } = createDatabase();
   try {
     {
       await using connection = await startConnection(db);
-      assert.notEqual(connection.db, db);
+      expect(connection.db).not.toBe(db);
       await connection.db.selectFrom("person").selectAll().execute();
-      assert.deepEqual(driver.events, ["acquire"]);
+      expect(driver.events).toEqual(["acquire"]);
     }
-    assert.deepEqual(driver.events, ["acquire", "release"]);
+    expect(driver.events).toEqual(["acquire", "release"]);
   } finally {
     await db.destroy();
   }
 });
 
-await test("all concurrent release callers wait for cleanup, including disposal", async () => {
+test("all concurrent release callers wait for cleanup, including disposal", async () => {
   const { db, driver } = createDatabase();
   const gate = Promise.withResolvers<undefined>();
   driver.releaseGate = gate.promise;
@@ -125,53 +124,53 @@ await test("all concurrent release callers wait for cleanup, including disposal"
       completed = true;
     });
     await Promise.resolve();
-    assert.equal(completed, false);
+    expect(completed).toBe(false);
     gate.resolve(undefined);
     await Promise.all([first, second, connection[Symbol.asyncDispose]()]);
-    assert.deepEqual(driver.events, ["acquire", "release"]);
+    expect(driver.events).toEqual(["acquire", "release"]);
   } finally {
     gate.resolve(undefined);
     await db.destroy();
   }
 });
 
-await test("connection acquisition failure rejects instead of hanging", { timeout: 1000 }, async () => {
+test("connection acquisition failure rejects instead of hanging", { timeout: 1000 }, async () => {
   const { db, driver } = createDatabase();
   driver.fail = "acquire";
   try {
-    await assert.rejects(startConnection(db), { message: "acquire" });
+    await expect(startConnection(db)).rejects.toThrow("acquire");
   } finally {
     await db.destroy();
   }
 });
 
-await test("connection release failures reach every caller", async () => {
+test("connection release failures reach every caller", async () => {
   const { db, driver } = createDatabase();
   try {
     const connection = await startConnection(db);
     driver.fail = "release";
-    await assert.rejects(connection.release(), { message: "release" });
-    await assert.rejects(connection[Symbol.asyncDispose](), { message: "release" });
+    await expect(connection.release()).rejects.toThrow("release");
+    await expect(connection[Symbol.asyncDispose]()).rejects.toThrow("release");
   } finally {
     await db.destroy();
   }
 });
 
-await test("connection is released when the scope body throws", async () => {
+test("connection is released when the scope body throws", async () => {
   const { db, driver } = createDatabase();
   try {
-    await assert.rejects(async () => {
+    await expect(async () => {
       await using connection = await startConnection(db);
-      assert.ok(connection.db);
+      expect(connection.db).toBeTruthy();
       throw new Error("body");
-    }, { message: "body" });
-    assert.deepEqual(driver.events, ["acquire", "release"]);
+    }).rejects.toThrow("body");
+    expect(driver.events).toEqual(["acquire", "release"]);
   } finally {
     await db.destroy();
   }
 });
 
-await test("transaction disposal rolls back on normal and exceptional scope exit", async () => {
+test("transaction disposal rolls back on normal and exceptional scope exit", async () => {
   for (const throws of [false, true]) {
     const { db, driver } = createDatabase();
     try {
@@ -180,16 +179,16 @@ await test("transaction disposal rolls back on normal and exceptional scope exit
         await tx.transaction.selectFrom("person").selectAll().execute();
         if (throws) throw new Error("body");
       };
-      if (throws) await assert.rejects(body, { message: "body" });
+      if (throws) await expect(body()).rejects.toThrow("body");
       else await body();
-      assert.deepEqual(driver.events, ["acquire", "begin", "rollback", "release"]);
+      expect(driver.events).toEqual(["acquire", "begin", "rollback", "release"]);
     } finally {
       await db.destroy();
     }
   }
 });
 
-await test("explicit commit and rollback prevent disposal from rolling back again", async () => {
+test("explicit commit and rollback prevent disposal from rolling back again", async () => {
   for (const action of ["commit", "rollback"] as const) {
     const { db, driver } = createDatabase();
     try {
@@ -197,59 +196,60 @@ await test("explicit commit and rollback prevent disposal from rolling back agai
         await using tx = await startTransaction(db);
         await tx[action]();
       }
-      assert.deepEqual(driver.events, ["acquire", "begin", action, "release"]);
+      expect(driver.events).toEqual(["acquire", "begin", action, "release"]);
     } finally {
       await db.destroy();
     }
   }
 });
 
-await test("disposal respects transactions finalized through the exposed Kysely object", async () => {
+test("disposal respects transactions finalized through the exposed Kysely object", async () => {
   const { db, driver } = createDatabase();
   try {
     {
       await using tx = await startTransaction(db);
       await tx.transaction.commit().execute();
     }
-    assert.deepEqual(driver.events, ["acquire", "begin", "commit", "release"]);
+    expect(driver.events).toEqual(["acquire", "begin", "commit", "release"]);
   } finally {
     await db.destroy();
   }
 });
 
-await test("failed commit propagates and disposal still rolls back", async () => {
+test("failed commit propagates and disposal still rolls back", async () => {
   const { db, driver } = createDatabase();
   try {
     {
       await using tx = await startTransaction(db);
       driver.fail = "commit";
-      await assert.rejects(tx.commit(), { message: "commit" });
+      await expect(tx.commit()).rejects.toThrow("commit");
     }
-    assert.deepEqual(driver.events, ["acquire", "begin", "commit", "rollback", "release"]);
+    expect(driver.events).toEqual(["acquire", "begin", "commit", "rollback", "release"]);
   } finally {
     await db.destroy();
   }
 });
 
-await test("uncaught commit failure rolls back before the original error leaves the scope", async () => {
+test("uncaught commit failure rolls back before the original error leaves the scope", async () => {
   const { db, driver } = createDatabase();
   const commitError = new Error("commit failed");
   driver.failures.set("commit", commitError);
   try {
-    await assert.rejects(async () => {
+    let caught: unknown;
+    try {
       await using tx = await startTransaction(db);
       await tx.commit();
-    }, (error: unknown) => {
-      assert.equal(error, commitError);
-      assert.deepEqual(driver.events, ["acquire", "begin", "commit", "rollback", "release"]);
-      return true;
-    });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBe(commitError);
+    expect(driver.events).toEqual(["acquire", "begin", "commit", "rollback", "release"]);
   } finally {
     await db.destroy();
   }
 });
 
-await test("explicit rollback after commit failure is not repeated on disposal", async () => {
+test("explicit rollback after commit failure is not repeated on disposal", async () => {
   const { db, driver } = createDatabase();
   const commitError = new Error("commit failed");
   driver.failures.set("commit", commitError);
@@ -258,105 +258,110 @@ await test("explicit rollback after commit failure is not repeated on disposal",
       await using tx = await startTransaction(db);
       try {
         await tx.commit();
-        assert.fail("commit must reject");
+        expect.unreachable("commit must reject");
       } catch (error) {
-        assert.equal(error, commitError);
-        assert.equal(tx.transaction.isCommitted, false);
-        assert.equal(tx.transaction.isRolledBack, false);
+        expect(error).toBe(commitError);
+        expect(tx.transaction.isCommitted).toBe(false);
+        expect(tx.transaction.isRolledBack).toBe(false);
         await tx.rollback();
-        assert.equal(tx.transaction.isRolledBack, true);
+        expect(tx.transaction.isRolledBack).toBe(true);
       }
     }
-    assert.deepEqual(driver.events, ["acquire", "begin", "commit", "rollback", "release"]);
+    expect(driver.events).toEqual(["acquire", "begin", "commit", "rollback", "release"]);
   } finally {
     await db.destroy();
   }
 });
 
-await test("commit and rollback failures produce SuppressedError with both original errors", async () => {
+test("commit and rollback failures produce SuppressedError with both original errors", async () => {
   const { db, driver } = createDatabase();
   const commitError = new Error("commit failed");
   const rollbackError = new Error("rollback failed");
   driver.failures.set("commit", commitError);
   driver.failures.set("rollback", rollbackError);
   try {
-    await assert.rejects(async () => {
+    let caught: unknown;
+    try {
       await using tx = await startTransaction(db);
       await tx.commit();
-    }, (error: unknown) => {
-      assert.ok(error instanceof Error);
-      assert.equal(error.name, "SuppressedError");
-      assert.ok("error" in error);
-      assert.ok("suppressed" in error);
-      assert.equal(error.error, rollbackError);
-      assert.equal(error.suppressed, commitError);
-      assert.deepEqual(driver.events, ["acquire", "begin", "commit", "rollback", "release"]);
-      return true;
-    });
+    } catch (error) {
+      caught = error;
+    }
+    if (!(caught instanceof Error)) expect.unreachable("expected Error");
+    expect(caught.name).toBe("SuppressedError");
+    if (!("error" in caught && "suppressed" in caught)) {
+      expect.unreachable("expected SuppressedError fields");
+    }
+    expect(caught.error).toBe(rollbackError);
+    expect(caught.suppressed).toBe(commitError);
+    expect(driver.events).toEqual(["acquire", "begin", "commit", "rollback", "release"]);
   } finally {
     await db.destroy();
   }
 });
 
-await test("body throw and rollback failure produce SuppressedError with both original errors", async () => {
+test("body throw and rollback failure produce SuppressedError with both original errors", async () => {
   const { db, driver } = createDatabase();
   const bodyError = new Error("body failed");
   const rollbackError = new Error("rollback failed");
   driver.failures.set("rollback", rollbackError);
   try {
-    await assert.rejects(async () => {
+    let caught: unknown;
+    try {
       await using tx = await startTransaction(db);
-      assert.ok(tx.transaction);
+      expect(tx.transaction).toBeTruthy();
       throw bodyError;
-    }, (error: unknown) => {
-      assert.ok(error instanceof Error);
-      assert.equal(error.name, "SuppressedError");
-      assert.ok("error" in error);
-      assert.ok("suppressed" in error);
-      assert.equal(error.error, rollbackError);
-      assert.equal(error.suppressed, bodyError);
-      assert.deepEqual(driver.events, ["acquire", "begin", "rollback", "release"]);
-      return true;
-    });
+    } catch (error) {
+      caught = error;
+    }
+    if (!(caught instanceof Error)) expect.unreachable("expected Error");
+    expect(caught.name).toBe("SuppressedError");
+    if (!("error" in caught && "suppressed" in caught)) {
+      expect.unreachable("expected SuppressedError fields");
+    }
+    expect(caught.error).toBe(rollbackError);
+    expect(caught.suppressed).toBe(bodyError);
+    expect(driver.events).toEqual(["acquire", "begin", "rollback", "release"]);
   } finally {
     await db.destroy();
   }
 });
 
-await test("database-aborted commit does not send a redundant rollback on disposal", async () => {
+test("database-aborted commit does not send a redundant rollback on disposal", async () => {
   const { db, driver } = createDatabase();
   const commitError = new AbortedTransactionError();
   driver.failures.set("commit", commitError);
   try {
-    await assert.rejects(async () => {
+    let caught: unknown;
+    try {
       await using tx = await startTransaction(db);
       await tx.commit();
-    }, (error: unknown) => {
-      assert.equal(error, commitError);
-      assert.deepEqual(driver.events, ["acquire", "begin", "commit", "release"]);
-      return true;
-    });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBe(commitError);
+    expect(driver.events).toEqual(["acquire", "begin", "commit", "release"]);
   } finally {
     await db.destroy();
   }
 });
 
-await test("transaction startup and rollback failures propagate", async () => {
+test("transaction startup and rollback failures propagate", async () => {
   for (const failure of ["begin", "rollback"]) {
     const { db, driver } = createDatabase();
     driver.fail = failure;
     try {
-      await assert.rejects(async () => {
+      await expect(async () => {
         await using tx = await startTransaction(db);
-        assert.ok(tx.transaction);
-      }, { message: failure });
+        expect(tx.transaction).toBeTruthy();
+      }).rejects.toThrow(failure);
     } finally {
       await db.destroy();
     }
   }
 });
 
-await test("savepoint disposal rolls back without ending the outer transaction", async () => {
+test("savepoint disposal rolls back without ending the outer transaction", async () => {
   const { db, driver } = createDatabase();
   try {
     {
@@ -371,7 +376,7 @@ await test("savepoint disposal rolls back without ending the outer transaction",
       }
       await tx.commit();
     }
-    assert.deepEqual(driver.events, [
+    expect(driver.events).toEqual([
       "acquire", "begin", "savepoint", "savepoint", "rollback-savepoint",
       "release-savepoint", "commit", "release",
     ]);
@@ -380,7 +385,7 @@ await test("savepoint disposal rolls back without ending the outer transaction",
   }
 });
 
-await test("explicit savepoint release and rollback prevent a second disposal command", async () => {
+test("explicit savepoint release and rollback prevent a second disposal command", async () => {
   for (const action of ["release", "rollback"] as const) {
     const { db, driver } = createDatabase();
     try {
@@ -392,7 +397,7 @@ await test("explicit savepoint release and rollback prevent a second disposal co
           await sp[Symbol.asyncDispose]();
         }
       }
-      assert.deepEqual(driver.events, [
+      expect(driver.events).toEqual([
         "acquire", "begin", "savepoint", `${action}-savepoint`, "rollback", "release",
       ]);
     } finally {
@@ -401,16 +406,16 @@ await test("explicit savepoint release and rollback prevent a second disposal co
   }
 });
 
-await test("savepoint rolls back when the scope body throws", async () => {
+test("savepoint rolls back when the scope body throws", async () => {
   const { db, driver } = createDatabase();
   try {
-    await assert.rejects(async () => {
+    await expect(async () => {
       await using tx = await startTransaction(db);
       await using sp = await startSavePoint(tx.transaction, "point");
-      assert.ok(sp.transaction);
+      expect(sp.transaction).toBeTruthy();
       throw new Error("body");
-    }, { message: "body" });
-    assert.deepEqual(driver.events, [
+    }).rejects.toThrow("body");
+    expect(driver.events).toEqual([
       "acquire", "begin", "savepoint", "rollback-savepoint", "rollback", "release",
     ]);
   } finally {
@@ -418,22 +423,23 @@ await test("savepoint rolls back when the scope body throws", async () => {
   }
 });
 
-await test("savepoint creation, release, and rollback failures propagate", async () => {
+test("savepoint creation, release, and rollback failures propagate", async () => {
   for (const failure of ["savepoint", "release-savepoint", "rollback-savepoint"]) {
     const { db, driver } = createDatabase();
     try {
       await using tx = await startTransaction(db);
       driver.fail = failure;
       if (failure === "savepoint") {
-        await assert.rejects(startSavePoint(tx.transaction, "point"), { message: failure });
+        await expect(startSavePoint(tx.transaction, "point")).rejects.toThrow(failure);
       } else {
         const sp = await startSavePoint(tx.transaction, "point");
         const action = () => failure === "release-savepoint" ? sp.release() : sp.rollback();
-        await assert.rejects(action(), { message: failure });
+        await expect(action()).rejects.toThrow(failure);
         driver.fail = undefined;
         await sp[Symbol.asyncDispose]();
-        assert.equal(driver.events.filter((event) => event === "rollback-savepoint").length,
-          failure === "rollback-savepoint" ? 2 : 1);
+        expect(
+          driver.events.filter((event) => event === "rollback-savepoint").length,
+        ).toBe(failure === "rollback-savepoint" ? 2 : 1);
       }
     } finally {
       await db.destroy();
@@ -441,15 +447,15 @@ await test("savepoint creation, release, and rollback failures propagate", async
   }
 });
 
-await test("startConnection forwards AbortableOperationOptions", async () => {
+test("startConnection forwards AbortableOperationOptions", async () => {
   const { db, driver } = createDatabase();
   const controller = new AbortController();
   try {
     {
       await using connection = await startConnection(db, { signal: controller.signal });
-      assert.ok(connection.db);
+      expect(connection.db).toBeTruthy();
     }
-    assert.deepEqual(driver.connectionOptions, [
+    expect(driver.connectionOptions).toEqual([
       { signal: controller.signal },
       { signal: controller.signal },
     ]);
@@ -458,7 +464,7 @@ await test("startConnection forwards AbortableOperationOptions", async () => {
   }
 });
 
-await test("startTransaction accepts options object and builder callback", async () => {
+test("startTransaction accepts options object and builder callback", async () => {
   const { db, driver } = createDatabase();
   try {
     {
@@ -478,7 +484,7 @@ await test("startTransaction accepts options object and builder callback", async
       );
       await tx.commit();
     }
-    assert.deepEqual(driver.transactionSettings, [
+    expect(driver.transactionSettings).toEqual([
       { isolationLevel: "serializable", accessMode: "read only" },
       { isolationLevel: undefined, accessMode: undefined },
       { isolationLevel: "repeatable read", accessMode: "read write" },
@@ -488,10 +494,10 @@ await test("startTransaction accepts options object and builder callback", async
   }
 });
 
-await test("package exports support CommonJS require()", () => {
+test("package exports support CommonJS require()", () => {
   const require = createRequire(import.meta.url);
   const cjsModule = require("kysely-scoped-helper") as Record<string, unknown>;
-  assert.equal(typeof cjsModule.startConnection, "function");
-  assert.equal(typeof cjsModule.startTransaction, "function");
-  assert.equal(typeof cjsModule.startSavePoint, "function");
+  expect(typeof cjsModule.startConnection).toBe("function");
+  expect(typeof cjsModule.startTransaction).toBe("function");
+  expect(typeof cjsModule.startSavePoint).toBe("function");
 });

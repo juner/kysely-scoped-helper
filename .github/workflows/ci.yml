@@ -33,8 +33,5 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Run type and runtime tests
+      - name: Run type tests and coverage tests
         run: npm test
-
-      - name: Verify 100% test coverage
-        run: npm run test:coverage

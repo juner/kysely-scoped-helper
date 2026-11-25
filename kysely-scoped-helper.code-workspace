@@ -10,17 +10,14 @@
 			"*.ts": "${capture}.js, ${capture}.*.ts",
 		},
 		"coverage-gutters.coverageFileNames": [
-			"coverage.lcov",
-			"lcov.info",
-			"cov.xml",
-			"coverage.xml",
-			"cobertura.xml",
-			"jacoco.xml",
-			"coverage.cobertura.xml"
+			"cobertura-coverage.xml",
+			"coverage.cobertura.xml",
+			"coverage-final.json"
 		],
 	},
 	"extensions": {
 		"recommendations": [
+			"vitest.explorer",
 			"ryanluker.vscode-coverage-gutters"
 		]
 	},
